@@ -86,11 +86,16 @@ export async function syncToolsFromServer() {
   const base = config.serverUrl.trim().replace(/\/+$/, "");
   if (!base) throw new Error("رابط خادم الأدوات غير مضبوط");
 
+  // محاولة واحدة فقط بمهلة أقل من حد Netlify الصارم (10 ثوانٍ على الخطة
+  // المجانية) — أي إعادة محاولة تتجاوز هذا الحد تجعل Netlify نفسها توقف
+  // الدالة وترجع صفحة خطأ HTML بدل JSON.
   let res: Response;
   try {
-    res = await fetchWithTimeout(`${base}/tools`, 9000);
-  } catch {
-    res = await fetchWithTimeout(`${base}/tools`, 20000);
+    res = await fetchWithTimeout(`${base}/tools`, 8000);
+  } catch (err) {
+    throw new Error(
+      `تعذّر الوصول لخادم الأدوات خلال 8 ثوانٍ (قد يكون نائماً على Hugging Face): ${(err as Error).message}`
+    );
   }
 
   if (!res.ok) {
