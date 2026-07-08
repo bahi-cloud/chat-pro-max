@@ -56,24 +56,50 @@ export type ExternalToolDef = {
   };
 };
 
+/** يجلب `url` مع مهلة زمنية محددة (بالمللي ثانية). إن تجاوز الخادم هذه
+ * المهلة، يُلغى الطلب برمي خطأ بدل الانتظار إلى ما لا نهاية. */
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; chat-tools-sync/1.0)",
+      },
+    });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 /** يجلب قائمة الأدوات من خادم الأدوات الخارجي ويُدرِج أي أداة جديدة تلقائياً
- * في قاعدة البيانات، مع الحفاظ على حالة التفعيل/التعطيل للأدوات الموجودة. */
+ * في قاعدة البيانات، مع الحفاظ على حالة التفعيل/التعطيل للأدوات الموجودة.
+ *
+ * يحاول مرتين: محاولة أولى سريعة (9 ثوانٍ)، وإن فشلت (غالباً لأن خادم
+ * Hugging Face Space كان نائماً وبدأ يستيقظ الآن) يعيد المحاولة بمهلة
+ * أطول (20 ثانية) لإعطاء الخادم فرصة حقيقية للاستجابة. */
 export async function syncToolsFromServer() {
   const config = await getOrCreateToolsConfig();
   const base = config.serverUrl.trim().replace(/\/+$/, "");
   if (!base) throw new Error("رابط خادم الأدوات غير مضبوط");
 
-  const res = await fetch(`${base}/tools`, {
-  cache: "no-store",
-  headers: {
-    "Accept": "application/json",
-    "User-Agent": "Mozilla/5.0 (compatible; chat-tools-sync/1.0)",
-  },
-});
-if (!res.ok) {
-  const bodyText = await res.text().catch(() => "");
-  throw new Error(`HTTP ${res.status} — ${bodyText.slice(0, 200)}`);
-}
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${base}/tools`, 9000);
+  } catch {
+    res = await fetchWithTimeout(`${base}/tools`, 20000);
+  }
+
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} — ${bodyText.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { tools?: ExternalToolDef[] };
+  const externalTools = data.tools || [];
 
   const existingRows = await db.select().from(tools);
   const existingByName = new Map(existingRows.map((r) => [r.name, r]));
