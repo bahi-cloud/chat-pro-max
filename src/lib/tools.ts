@@ -63,10 +63,17 @@ export async function syncToolsFromServer() {
   const base = config.serverUrl.trim().replace(/\/+$/, "");
   if (!base) throw new Error("رابط خادم الأدوات غير مضبوط");
 
-  const res = await fetch(`${base}/tools`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = (await res.json()) as { tools?: ExternalToolDef[] };
-  const externalTools = data.tools || [];
+  const res = await fetch(`${base}/tools`, {
+  cache: "no-store",
+  headers: {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (compatible; chat-tools-sync/1.0)",
+  },
+});
+if (!res.ok) {
+  const bodyText = await res.text().catch(() => "");
+  throw new Error(`HTTP ${res.status} — ${bodyText.slice(0, 200)}`);
+}
 
   const existingRows = await db.select().from(tools);
   const existingByName = new Map(existingRows.map((r) => [r.name, r]));
