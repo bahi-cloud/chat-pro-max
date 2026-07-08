@@ -9,3 +9,6 @@
   from = "/"
   to = "/app.html"
   status = 200
+
+[functions]
+  timeout = 26
